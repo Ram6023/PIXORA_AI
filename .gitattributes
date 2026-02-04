@@ -1,0 +1,34 @@
+# Standardize line endings
+* text=auto
+
+# Explicitly declare text files
+*.js text
+*.jsx text
+*.ts text
+*.tsx text
+*.json text
+*.css text
+*.scss text
+*.html text
+*.md text
+
+# Declare binary files (don't try to fix line endings)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.pdf binary
+
+# Lockfiles
+package-lock.json -diff
+yarn.lock -diff
+pnpm-lock.yaml -diff
+bun.lockb binary
