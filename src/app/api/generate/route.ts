@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// Edge runtime to avoid timeouts
+// Edge runtime is essential for long-running image generation
 export const runtime = "edge";
 
 const MODEL_MAPPING: Record<string, string> = {
     "flux-schnell": "flux",
     "flux-dev": "flux-realism",
-    "sdxl": "any-dark",
+    "sdxl": "flux",
     "sdxl-lightning": "turbo",
     "dreamshaper": "dreamshaper",
     "lucid-origin": "flux-anime",
@@ -28,46 +28,61 @@ export async function GET(request: NextRequest) {
         const modelKey = searchParams.get("model") || "flux-schnell";
         const width = searchParams.get("width") || "1024";
         const height = searchParams.get("height") || "1024";
-        const seed = searchParams.get("seed") || Math.floor(Math.random() * 1000000).toString();
+        // Use a random seed if none provided to ensure we don't hit "busy" cached workers
+        const seed = searchParams.get("seed") || Math.floor(Math.random() * 999999).toString();
         const model = MODEL_MAPPING[modelKey] || "flux";
 
-        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&model=${model}&nologo=true&private=true&enhance=false`;
+        // Build URL
+        const pollUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`);
+        pollUrl.searchParams.set("width", width);
+        pollUrl.searchParams.set("height", height);
+        pollUrl.searchParams.set("seed", seed);
+        pollUrl.searchParams.set("model", model);
+        pollUrl.searchParams.set("nologo", "true");
+        pollUrl.searchParams.set("enhance", "false");
 
         const apiKey = process.env.POLLINATIONS_API_KEY;
         const headers: Record<string, string> = {
-            "Accept": "image/webp,image/apng,image/*",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "Accept": "image/*",
         };
 
         if (apiKey) {
-            headers["Authorization"] = `Bearer ${apiKey}`;
+            headers["Authorization"] = `Bearer ${apiKey.trim()}`;
         }
 
-        const response = await fetch(pollUrl, { headers });
+        console.log(`Generating: ${model} | Seed: ${seed}`);
+
+        const response = await fetch(pollUrl.toString(), {
+            headers,
+            next: { revalidate: 0 } // Disable Next.js caching for this request
+        });
 
         if (!response.ok) {
-            // Log error but try fallback if not already using default flux
-            console.error(`Pollinations API error: ${response.status}`);
-
+            // Fallback to the most stable model if the current one is busy
             if (model !== "flux") {
                 const fallbackUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&model=flux&nologo=true`;
                 const fallbackResponse = await fetch(fallbackUrl, { headers });
+
                 if (fallbackResponse.ok) {
                     return new NextResponse(fallbackResponse.body, {
                         headers: {
                             "Content-Type": "image/png",
-                            "Cache-Control": "public, max-age=31536000, immutable",
+                            "Cache-Control": "no-store, must-revalidate",
                         },
                     });
                 }
             }
-            return NextResponse.json({ error: "The AI model is currently busy. Please try again soon." }, { status: 503 });
+
+            return NextResponse.json(
+                { error: "Model busy or API key pending. Try again in 5 seconds." },
+                { status: 503 }
+            );
         }
 
         return new NextResponse(response.body, {
             headers: {
                 "Content-Type": "image/png",
-                "Cache-Control": "public, max-age=31536000, immutable",
+                "Cache-Control": "no-store, must-revalidate",
             },
         });
 
