@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// Use edge runtime to avoid the 10s timeout on Vercel Hobby plan
+export const runtime = "edge";
+
 const MODEL_MAPPING: Record<string, string> = {
     "flux-schnell": "flux",
     "flux-dev": "flux-realism",
@@ -31,12 +34,10 @@ export async function GET(request: NextRequest) {
         const response = await fetch(pollUrl);
 
         if (!response.ok) {
-            const errorText = await response.text();
-            console.error("Pollinations Error:", errorText);
             return NextResponse.json({ error: "Upstream API error" }, { status: response.status });
         }
 
-        // Return the image data directly as a stream (better for Vercel/Next.js)
+        // Return the image data directly as a stream
         return new NextResponse(response.body, {
             headers: {
                 "Content-Type": "image/png",
@@ -46,6 +47,6 @@ export async function GET(request: NextRequest) {
 
     } catch (err: any) {
         console.error("API Route Error:", err);
-        return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
+        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
     }
 }

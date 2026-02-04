@@ -10,6 +10,9 @@ const nextConfig = {
             },
             {
                 hostname: 'images.unsplash.com',
+            },
+            {
+                hostname: 'image.pollinations.ai',
             }
         ],
     },
