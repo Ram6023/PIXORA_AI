@@ -3,46 +3,41 @@ import { NextRequest, NextResponse } from "next/server";
 const MODEL_MAPPING: Record<string, string> = {
     "flux-schnell": "flux",
     "flux-dev": "flux-realism",
-    "sdxl": "any-dark", // Good SDXL variant on Pollinations
+    "sdxl": "any-dark",
     "sdxl-lightning": "turbo",
     "dreamshaper": "dreamshaper",
-    "lucid-origin": "flux-anime", // Artistic/Anime variant
+    "lucid-origin": "flux-anime",
     "phoenix": "flux-pro",
 };
 
 export async function GET(request: NextRequest) {
-    const { searchParams } = new URL(request.url);
-    const prompt = searchParams.get("prompt");
-    const modelKey = searchParams.get("model") || "flux-schnell";
-    const width = searchParams.get("width") || "1024";
-    const height = searchParams.get("height") || "1024";
-    const seed = searchParams.get("seed") || Math.floor(Math.random() * 1000000).toString();
-
-    if (!prompt) {
-        return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
-    }
-
     try {
-        const model = MODEL_MAPPING[modelKey] || "flux";
+        const { searchParams } = new URL(request.url);
+        const prompt = searchParams.get("prompt");
+        const modelKey = searchParams.get("model") || "flux-schnell";
+        const width = searchParams.get("width") || "1024";
+        const height = searchParams.get("height") || "1024";
+        const seed = searchParams.get("seed") || Math.floor(Math.random() * 1000000).toString();
 
-        // Pollinations AI URL structure: https://pollinations.ai/p/[prompt]?width=[w]&height=[h]&seed=[s]&model=[m]
-        const pollUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`);
-        pollUrl.searchParams.set("width", width);
-        pollUrl.searchParams.set("height", height);
-        pollUrl.searchParams.set("seed", seed);
-        pollUrl.searchParams.set("model", model);
-        pollUrl.searchParams.set("nologo", "true"); // Remove watermark if possible
-
-        const response = await fetch(pollUrl.toString());
-
-        if (!response.ok) {
-            throw new Error(`Pollinations API responded with ${response.status}`);
+        if (!prompt) {
+            return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
         }
 
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        const model = MODEL_MAPPING[modelKey] || "flux";
 
-        return new NextResponse(buffer, {
+        // Construct the Pollinations URL
+        const pollUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=${width}&height=${height}&seed=${seed}&model=${model}&nologo=true`;
+
+        const response = await fetch(pollUrl);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error("Pollinations Error:", errorText);
+            return NextResponse.json({ error: "Upstream API error" }, { status: response.status });
+        }
+
+        // Return the image data directly as a stream (better for Vercel/Next.js)
+        return new NextResponse(response.body, {
             headers: {
                 "Content-Type": "image/png",
                 "Cache-Control": "public, max-age=31536000, immutable",
@@ -50,7 +45,7 @@ export async function GET(request: NextRequest) {
         });
 
     } catch (err: any) {
-        console.error("Pollinations Generation Error:", err);
-        return NextResponse.json({ error: "Failed to generate image" }, { status: 500 });
+        console.error("API Route Error:", err);
+        return NextResponse.json({ error: err.message || "Internal Server Error" }, { status: 500 });
     }
 }
