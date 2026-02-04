@@ -1,72 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
-import Bytez from "bytez.js";
 
 const MODEL_MAPPING: Record<string, string> = {
-    "flux-schnell": "black-forest-labs/FLUX.1-schnell",
-    "flux-dev": "black-forest-labs/FLUX.1-dev",
-    "sdxl": "stabilityai/stable-diffusion-xl-base-1.0",
-    "sdxl-lightning": "Bytez/sdxl-lightning",
-    "dreamshaper": "Lykon/DreamShaper",
-    "lucid-origin": "lucidways/lucid-origin", // Generic mapping if available
-    "phoenix": "Bytez/phoenix",
+    "flux-schnell": "flux",
+    "flux-dev": "flux-realism",
+    "sdxl": "any-dark", // Good SDXL variant on Pollinations
+    "sdxl-lightning": "turbo",
+    "dreamshaper": "dreamshaper",
+    "lucid-origin": "flux-anime", // Artistic/Anime variant
+    "phoenix": "flux-pro",
 };
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const prompt = searchParams.get("prompt");
     const modelKey = searchParams.get("model") || "flux-schnell";
+    const width = searchParams.get("width") || "1024";
+    const height = searchParams.get("height") || "1024";
+    const seed = searchParams.get("seed") || Math.floor(Math.random() * 1000000).toString();
 
     if (!prompt) {
         return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
 
-    const apiKey = process.env.BYTEZ_API_KEY;
-    if (!apiKey) {
-        return NextResponse.json({ error: "API Key not configured" }, { status: 500 });
-    }
-
     try {
-        const sdk = new Bytez(apiKey);
-        const modelPath = MODEL_MAPPING[modelKey] || MODEL_MAPPING["flux-schnell"];
-        const model = sdk.model(modelPath);
+        const model = MODEL_MAPPING[modelKey] || "flux";
 
-        // Run the model
-        const { error, output } = await model.run(prompt);
+        // Pollinations AI URL structure: https://pollinations.ai/p/[prompt]?width=[w]&height=[h]&seed=[s]&model=[m]
+        const pollUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`);
+        pollUrl.searchParams.set("width", width);
+        pollUrl.searchParams.set("height", height);
+        pollUrl.searchParams.set("seed", seed);
+        pollUrl.searchParams.set("model", model);
+        pollUrl.searchParams.set("nologo", "true"); // Remove watermark if possible
 
-        if (error) {
-            console.error("Bytez API Error:", error);
-            return NextResponse.json({ error: typeof error === 'string' ? error : (error as any).message || "Failed to generate image" }, { status: 500 });
+        const response = await fetch(pollUrl.toString());
+
+        if (!response.ok) {
+            throw new Error(`Pollinations API responded with ${response.status}`);
         }
 
-        // Usually output is an array of buffers or a single buffer/string
-        // We expect an image response. We'll return it as a blob.
-        let imageData = output;
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-        // If output is an array, take the first element
-        if (Array.isArray(output)) {
-            imageData = output[0];
-        }
-
-        // Handle different output formats (Buffer, Base64, etc.)
-        if (typeof imageData === 'string' && imageData.startsWith('data:image')) {
-            const base64Data = imageData.split(',')[1];
-            const buffer = Buffer.from(base64Data, 'base64');
-            return new NextResponse(buffer, {
-                headers: {
-                    'Content-Type': 'image/png',
-                }
-            });
-        }
-
-        // If it's already a buffer or uint8array
-        return new NextResponse(imageData, {
+        return new NextResponse(buffer, {
             headers: {
-                'Content-Type': 'image/png', // Adjust based on model output if known
+                "Content-Type": "image/png",
+                "Cache-Control": "public, max-age=31536000, immutable",
             },
         });
 
     } catch (err: any) {
-        console.error("Internal Server Error:", err);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        console.error("Pollinations Generation Error:", err);
+        return NextResponse.json({ error: "Failed to generate image" }, { status: 500 });
     }
 }
